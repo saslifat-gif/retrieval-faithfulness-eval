@@ -1,0 +1,8 @@
+pandas
+smolagents
+litellm
+python-dotenv
+datasets
+huggingface_hub
+rank_bm25
+rapidfuzz

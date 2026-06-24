@@ -1,0 +1,7 @@
+.env
+.hf_cache/
+shop.db
+traces/
+stage1_summary.json
+__pycache__/
+*.pyc
