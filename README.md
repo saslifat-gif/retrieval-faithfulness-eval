@@ -1,5 +1,9 @@
 # MuSiQue Retrieval-Faithfulness Harness
 
+Standard agent evaluations usually check only final answers; this harness asks
+whether a correct answer was actually reached through retrieved evidence, or by
+substituting the model's parametric memory for tool use.
+
 Stage-1 evaluation harness for measuring whether a `smolagents` multi-hop QA run
 uses retrieved evidence faithfully, or substitutes parametric/background
 knowledge while still producing a correct final answer.
@@ -17,9 +21,10 @@ The harness also reports step-faithfulness divergence:
 divergence_rate = P(final_correct AND any_intermediate_wrong)
 ```
 
-In the current small validation run, divergence was rare and unstable, while
-unverified substitution survived extractor cleanup. Treat substitution as the
-main project signal and divergence as a secondary diagnostic.
+In the current small validation run (`n=15` traces), divergence appears rare,
+while unverified substitution remained visible after extractor cleanup. Treat
+substitution as the main project signal and divergence as a secondary diagnostic
+until larger runs stabilize the rates.
 
 This is evaluation only. There is no corruption injection, RL, or training.
 
@@ -42,13 +47,12 @@ The analyzer reports:
 - `divergence_rate`: correct final answer with at least one stated wrong hop
 - `frac_any_intermediate_wrong`
 - `frac_any_extraction_failed`
-- `primary_unverified_substitution_rate`
-- `extractable_answered_unverified_substitution_rate`
-- `extractable_answered_trace_count`
+- `frac_unverified_substitution`
 - `frac_verified_prior`
 - `frac_leakage_phrase_noise`
 - `extraction_health`: hit / wrong / extraction_failed counts
 - `final_answer_status_counts`: answered / non_final_output
+- `leakage_type_counts`: flag-level counts by leakage type
 
 Important distinction:
 
@@ -60,6 +64,12 @@ Important distinction:
 - `verified_prior`: the agent appears to know something early but later verifies
   it through retrieval.
 - `phrase_match_noise`: a leakage phrase matched but is not meaningful leakage.
+
+Leakage detection is heuristic. It uses lexical cues such as "I know",
+"historically", "from my knowledge", or "not in the provided passages", then
+separates obvious phrase-match noise from stronger substitution language. The
+flags are meant to create a review queue and aggregate signal, not a final
+ground-truth label without spot checks.
 
 ## Setup
 
@@ -137,7 +147,7 @@ requires interactive keyboard input.
 
 ## Current Small Validation Result
 
-After source-validated extraction on 15 traces:
+After source-validated extraction on 15 traces, the current output is:
 
 ```text
 trace_count = 15
@@ -145,12 +155,20 @@ final_accuracy = 0.933
 divergence_rate = 0.067
 frac_any_intermediate_wrong = 0.067
 frac_any_extraction_failed = 0.200
+frac_any_retrieval_missed = 0.000
+frac_parametric_leakage_signal = 0.467
 frac_unverified_substitution = 0.267
 frac_verified_prior = 0.400
 frac_leakage_phrase_noise = 0.600
+
+leakage_type_counts:
+  unverified_substitution: 11
+  verified_prior: 12
+  phrase_match_noise: 18
 ```
 
-The fractions are per-trace. `leakage_type_counts` are flag-level counts.
+The fractions are per-trace. `leakage_type_counts` are flag-level counts. These
+numbers are validation signals, not stable benchmark claims.
 
 ## Artifacts
 
@@ -169,3 +187,14 @@ This harness intentionally separates model behavior from instrument failure.
 Extraction gaps are reported as extraction gaps, not as wrong reasoning. Retrieved
 passages are never used to mark an intermediate hop correct; retrieval coverage
 is a separate diagnostic.
+
+Current constraints:
+
+- Dataset: answerable MuSiQue 2-hop/3-hop questions only; 4-hop questions are
+  intentionally skipped.
+- Agent: tested with `smolagents` and DeepSeek chat through LiteLLM.
+- Retrieval: local BM25 over each question's paragraph pool; embedding retrieval
+  is not implemented here.
+- Operating point matters: `MAX_STEPS`, `TOP_K`, and model choice change the
+  balance between final accuracy, max-step failures, and substitution behavior.
+- Leakage labels should be audited before treating a run as benchmark-quality.
