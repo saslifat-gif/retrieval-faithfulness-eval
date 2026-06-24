@@ -1,5 +1,6 @@
 .env
 .hf_cache/
+questions.json
 shop.db
 traces/
 stage1_summary.json

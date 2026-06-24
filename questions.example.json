@@ -1,0 +1,31 @@
+[
+  {
+    "id": "example_2hop_or_3hop_id",
+    "question": "Example multi-hop question text goes here.",
+    "gold_final_answer": "Example final answer.",
+    "decomposition": [
+      {
+        "sub_question": "First intermediate question.",
+        "gold_intermediate_answer": "First intermediate answer."
+      },
+      {
+        "sub_question": "Second intermediate question.",
+        "gold_intermediate_answer": "Second intermediate answer."
+      }
+    ],
+    "paragraphs": [
+      {
+        "index": 0,
+        "title": "Example title",
+        "text": "Example supporting or distractor paragraph text.",
+        "is_supporting": true
+      },
+      {
+        "index": 1,
+        "title": "Example distractor",
+        "text": "Another paragraph from the local question pool.",
+        "is_supporting": false
+      }
+    ]
+  }
+]

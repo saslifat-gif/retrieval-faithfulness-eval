@@ -11,7 +11,7 @@ knowledge while still producing a correct final answer.
 The core signal is:
 
 ```text
-primary_unverified_substitution_rate =
+frac_unverified_substitution =
 P(trace has unverified substitution) over all scored traces
 ```
 
@@ -172,8 +172,9 @@ numbers are validation signals, not stable benchmark claims.
 
 ## Artifacts
 
-- `questions.json`: sampled MuSiQue questions with gold final and intermediate
-  answers.
+- `questions.json`: generated sampled MuSiQue questions with gold final and
+  intermediate answers, ignored by git. Do not publish this file.
+- `questions.example.json`: schema-only example file safe to commit.
 - `traces/trace_{id}_{run}.json`: serialized traces, ignored by git.
 - `extracted_hop_conclusions`: source-validated post-hoc conclusions inside
   each trace.
