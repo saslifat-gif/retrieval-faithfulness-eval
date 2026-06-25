@@ -65,11 +65,17 @@ Important distinction:
   it through retrieval.
 - `phrase_match_noise`: a leakage phrase matched but is not meaningful leakage.
 
-Leakage detection is heuristic. It uses lexical cues such as "I know",
-"historically", "from my knowledge", or "not in the provided passages", then
-separates obvious phrase-match noise from stronger substitution language. The
-flags are meant to create a review queue and aggregate signal, not a final
-ground-truth label without spot checks.
+Leakage detection is heuristic. It uses lexical cues, then classifies each fired
+flag as `unverified_substitution`, `verified_prior`, or `phrase_match_noise`. The
+classifier is **precision-favoring**: only *assertion* cues — the agent claiming a
+fact from prior knowledge ("I know from general background…", "strongly associated
+with…", "common knowledge") — count as substitution. *Absence-of-evidence* phrasing
+("the passages don't contain X", "retrieval isn't returning specific info") is
+deliberately treated as noise, because noticing the evidence is insufficient is
+faithful behavior, not substitution — flagging it would invert the construct and
+penalize honesty. The flags are a review queue and aggregate signal, validated
+against human labels (see *Validating the Metric*), not a ground-truth label on
+their own.
 
 ## Setup
 
@@ -111,6 +117,14 @@ Run the agent and capture traces:
 python run_agent.py --runs 3 --max-steps 12
 ```
 
+Traces are independent and API-bound, so they parallelize across processes.
+`--workers N` fans out N traces at once (near-linear speedup until the model's
+rate limit); `MODEL_TIMEOUT` caps a single hung call so it can't stall the batch:
+
+```bash
+MODEL_TIMEOUT=90 python run_agent.py --runs 3 --max-steps 12 --workers 6
+```
+
 Smoke test:
 
 ```bash
@@ -144,6 +158,63 @@ python analyze.py
 
 Run `review.py` from an activated shell, not through `conda run`, because it
 requires interactive keyboard input.
+
+## Validating the Metric
+
+The scoring pipeline produces a substitution *number*; this track measures whether
+that number is *trustworthy* — whether the detector agrees with human judgment.
+Stdlib only, no model calls.
+
+```bash
+python label.py                 # interactive: hand-label each trace y/n for substitution
+python validate.py              # precision / recall / F1 of the detector vs labels, + baselines
+```
+
+- Gold labels live in `labels/labels.json`, a **separate gitignored store** keyed by
+  `"{id}::{run_index}"`. They are never written into trace files, so re-running the
+  pipeline cannot clobber them. Each label records a `reasoning_hash`; if the agent's
+  reasoning changes, `validate.py` marks the label stale and excludes it. Re-running
+  only the *detector* (`extract_hops`/`score`) does not invalidate labels — that is
+  the point of validating predictions against fixed human truth.
+- `validate.py` reports the detector against two bars: **majority-class accuracy** and
+  a **raw-lexical-flag baseline**. If it doesn't beat the lexical baseline, the
+  classifier adds nothing over regex.
+
+### Held-out generalization
+
+Tuning patterns on a set and validating on that same set is in-sample. To check the
+metric *generalizes*, build a fresh set with a different seed and validate with the
+patterns frozen:
+
+```bash
+python held_out.py --seed <new-seed> --runs 3 --max-steps 12 --workers 6
+python label.py    --traces-dir heldout/traces --labels heldout/labels.json --blind
+python validate.py --traces-dir heldout/traces --labels heldout/labels.json \
+                   --report heldout/validation_report.json
+```
+
+`held_out.py` writes only under `heldout/` and refuses the tuned default seed. Label
+held-out sets `--blind` so the detector's prediction cannot anchor the human judgment.
+A large recall drop here means the patterns overfit rather than capture the construct.
+
+## Detector Validation Result
+
+The substitution detector is **precision-favoring**: when it flags a trace, that is
+almost always a real prior-knowledge assertion. Measured against blind human labels:
+
+```text
+                 precision  recall   f1    accuracy   tp/fp/fn/tn
+tuned (n=90)       0.952    0.909  0.930    0.967      20/1/2/67
+held-out (n=90)    0.923    0.632  0.750    0.911      12/1/7/70
+```
+
+Held-out precision holds (~0.92), confirming the construct generalizes. The held-out
+recall drop is a known, bounded cost: the detector reliably catches *verbalized*
+substitution but misses *silent* bridges — an agent fabricating an intermediate fact
+with no lexical cue (e.g. asserting "Lake County, California" when the evidence says
+Oregon). Closing that gap needs a structural ungrounded-bridge signal, not more
+lexical cues; a retrieval-absence signal was tried and refuted (MuSiQue's gold bridge
+is almost always in the retrieved pool, so absence is not the discriminator).
 
 ## Current Small Validation Result
 

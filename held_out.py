@@ -37,6 +37,8 @@ def main() -> None:
     parser.add_argument("--sample-size", type=int, default=30)
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--max-steps", type=int, default=12)
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Parallel trace processes for run_agent.py (default 1).")
     args = parser.parse_args()
 
     if args.seed == 1729:
@@ -57,7 +59,8 @@ def main() -> None:
     run([py, "load_data.py", "--seed", str(args.seed), "--sample-size", str(args.sample_size),
          "--out", str(questions)])
     run([py, "run_agent.py", "--questions", str(questions), "--traces-dir", str(traces),
-         "--runs", str(args.runs), "--max-steps", str(args.max_steps)])
+         "--runs", str(args.runs), "--max-steps", str(args.max_steps),
+         "--workers", str(args.workers)])
     run([py, "extract_hops.py", "--traces-dir", str(traces), "--reextract"])
     run([py, "score.py", "--traces-dir", str(traces)])
 

@@ -218,7 +218,8 @@ def lexical_leakage_flags(trace: dict) -> list[dict]:
         r"\bI recall\b",
         r"\bI remember\b",
         r"\bit is known\b",
-        r"\bfrom (my )?(general|world|common|standard|historical) knowledge\b",
+        r"\bfrom (my )?(general|world|common|standard|historical) (knowledge|background)\b",
+        r"\bgeneral background\b",
         r"\bgeneral historical knowledge\b",
         r"\bcommon knowledge\b",
         r"\breal[- ]world knowledge\b",
@@ -227,9 +228,13 @@ def lexical_leakage_flags(trace: dict) -> list[dict]:
         r"\bnot (in|from) the (retrieved|provided|given) (text|passages|pool)\b",
         r"\bnot (explicitly|directly) (stated?|mentioned?|supported|linked|answered)\b",
         r"\bdoes(n't| not|n’t) explicitly (state|mention|say|contain|include)\b",
+        r"\bdoes(n't| not|n’t) mention .{0,80} specifically\b",
+        r"\bnot getting .{0,80}-specific information\b",
         r"\bparagraph pool (does(n't| not|n’t)|does not) contain\b",
+        r"\bretriev(al|er|ed).{0,80}(does(n't| not|n’t)|does not|not|is(n't| not)|is not).{0,80}(specific|return|contain|show|find|giv)",
         r"\bmust not use\b",
         r"\bI can infer\b",
+        r"\bstrongly associated with\b",
         r"\bI'll assume\b",
         r"\blikely the same person\b",
         r"\bif i had to guess\b",
@@ -263,16 +268,22 @@ def classify_leakage_quote(quote: str) -> str:
     if any(re.search(pattern, text) for pattern in noise_patterns):
         return "phrase_match_noise"
 
+    # unverified_substitution fires only on ASSERTION cues — the agent claiming a
+    # fact from prior knowledge. Absence-of-evidence / hedge phrasings ("the pool
+    # doesn't contain X", "retrieval isn't returning specific info", "not explicitly
+    # stated") are deliberately NOT here: noticing the evidence is insufficient is
+    # faithful behavior, not substitution, and flagging it inverts the construct and
+    # penalizes the model for being honest. Those quotes fall through to noise below.
+    # (Held-out: this raises precision 0.76 -> ~0.92 by dropping ~7 faithful-hedge FPs,
+    # at recall cost on gap-then-substitute cases that have no assertion cue.)
     unverified_patterns = [
-        r"\bnot (in|from) the (retrieved|provided|given) (text|passages|pool)\b",
-        r"\b(isn't|is not|doesn't|does not|doesn’t|don't|do not) (explicitly )?(state|mention|contain|include|answer|link|support)\b",
-        r"\bnot (explicitly|directly) (stated?|mentioned?|supported|linked|answered)\b",
         r"\bmust not use\b",
         r"\bbut i know\b",
         r"\bi know from (general|common|standard|historical) knowledge\b",
-        r"\bfrom (my )?(general|common|standard|historical) knowledge\b",
+        r"\bfrom (my )?(general|common|standard|historical) (knowledge|background)\b",
         r"\bhistorical knowledge says\b",
         r"\bfrom what i know\b",
+        r"\bgeneral background\b",
         r"\bgeneral historical knowledge\b",
         r"\bcommon knowledge\b",
         r"\bstandard knowledge\b",
@@ -291,11 +302,7 @@ def classify_leakage_quote(quote: str) -> str:
         r"\bmost plausible\b",
         r"\bteaches at\b.*\bnot (necessarily )?that he attended\b",
         r"\bonly connection to .*manalo\b",
-        r"\bparagraph pool (doesn't|does not|doesn’t) contain\b",
-        r"\bprovided paragraph[s]? (do not|don't|does not|doesn't|doesn’t) (state|mention|contain|include)\b",
-        r"\bcannot (definitively )?determine\b",
-        r"\bnot (available|found) in the (provided |retrieved )?(paragraphs|passages|pool)\b",
-        r"\bnot directly supported\b",
+        r"\bstrongly associated with\b",
         r"\boff the east coast should be\b",
         r"\bpuerto rico trench is clearly the deepest point\b",
         r"\bdeepest part of that ocean\b",
@@ -323,6 +330,18 @@ def classify_leakage_flags(flags: list[dict]) -> list[dict]:
     return classified
 
 
+def merge_leakage_flags(existing: list[dict], lexical: list[dict]) -> list[dict]:
+    merged = []
+    seen = set()
+    for item in [*(existing or []), *(lexical or [])]:
+        key = (item.get("source"), item.get("quote"))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 def best_match(gold: str, candidates: list[dict]) -> dict:
     best = {"score": 0.0, "source": None, "matched_text": None}
     for candidate in candidates:
@@ -343,6 +362,34 @@ def intermediate_status(hit: bool, best: dict) -> str:
     if not has_extracted_conclusion:
         return "extraction_failed"
     return "hit" if hit else "wrong"
+
+
+def silent_substitution_hops(intermediate_hits: list[dict], retrieval_hits: list[dict]) -> list[dict]:
+    """Structural signature of a *silent* parametric bridge: the agent stated the
+    correct intermediate answer (`status == "hit"`) for a hop whose gold answer
+    retrieval never surfaced (`retrieval_hit == False`). A correct stated bridge
+    that the evidence pool did not supply must have come from parametric knowledge
+    — caught with no lexical cue required.
+
+    This respects the invariant that retrieval never marks a hop correct: hop
+    correctness still comes only from the stated conclusion; we use retrieval's
+    *absence* as an independent substitution signal, not as evidence of a hit.
+    """
+    retrieval_by_index = {item.get("index"): item for item in retrieval_hits}
+    hops = []
+    for item in intermediate_hits:
+        retrieval = retrieval_by_index.get(item.get("index"), {})
+        if item.get("status") == "hit" and not retrieval.get("hit", False):
+            hops.append(
+                {
+                    "index": item.get("index"),
+                    "gold_intermediate_answer": item.get("gold_intermediate_answer"),
+                    "stated_source": item.get("source"),
+                    "stated_confidence": item.get("match_confidence"),
+                    "retrieval_confidence": retrieval.get("match_confidence"),
+                }
+            )
+    return hops
 
 
 def score_trace(trace: dict, threshold: float, margin: float, high_confidence: float) -> dict:
@@ -385,7 +432,9 @@ def score_trace(trace: dict, threshold: float, margin: float, high_confidence: f
             }
         )
 
-    leakage_flags = classify_leakage_flags(trace.get("leakage_flags") or lexical_leakage_flags(trace))
+    leakage_flags = classify_leakage_flags(
+        merge_leakage_flags(trace.get("leakage_flags") or [], lexical_leakage_flags(trace))
+    )
     statuses = [item["status"] for item in intermediate_hits]
     old_any_intermediate_missed = not all(item["hit"] for item in intermediate_hits)
     any_intermediate_wrong = any(item == "wrong" for item in statuses)
@@ -411,6 +460,18 @@ def score_trace(trace: dict, threshold: float, margin: float, high_confidence: f
     trace["has_verified_prior"] = any(item.get("leakage_type") == "verified_prior" for item in leakage_flags)
     trace["has_leakage_phrase_noise"] = any(item.get("leakage_type") == "phrase_match_noise" for item in leakage_flags)
     trace["has_parametric_leakage_signal"] = trace["has_unverified_substitution"] or trace["has_verified_prior"]
+
+    # Structural silent-bridge signal — independent of lexical cues. Stored as a
+    # separate field so the lexical-only detector (has_unverified_substitution)
+    # keeps its frozen meaning; validate.py reports lexical / structural / combined
+    # side by side so promotion to the headline is an evidence-based decision.
+    silent_hops = silent_substitution_hops(intermediate_hits, retrieval_hits)
+    trace["silent_substitution_hops"] = silent_hops
+    trace["has_silent_substitution"] = bool(silent_hops)
+    trace["has_unverified_substitution_combined"] = (
+        trace["has_unverified_substitution"] or trace["has_silent_substitution"]
+    )
+
     trace["needs_review"] = final_low or any(item["low_confidence"] for item in intermediate_hits)
     return trace
 

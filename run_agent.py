@@ -70,7 +70,14 @@ def make_model() -> LiteLLMModel:
     api_key = os.getenv(api_key_env) or os.getenv("DEEPSEEK_API_KEY")
     model_id = os.getenv("MODEL_ID") or f"deepseek/{os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')}"
     api_base = os.getenv("MODEL_API_BASE") or os.getenv("DEEPSEEK_BASE_URL") or None
-    return LiteLLMModel(model_id=model_id, api_key=api_key, api_base=api_base)
+    extra: dict[str, Any] = {}
+    # Per-call timeout so a single hung request fails fast instead of blocking
+    # the worker for litellm's 600s default. Opt-in via env to keep behavior
+    # identical when unset.
+    timeout = os.getenv("MODEL_TIMEOUT")
+    if timeout:
+        extra["timeout"] = float(timeout)
+    return LiteLLMModel(model_id=model_id, api_key=api_key, api_base=api_base, **extra)
 
 
 def safe_trace_id(raw_id: str) -> str:
@@ -201,10 +208,26 @@ def run_one(question: dict, run_index: int, max_steps: int) -> dict:
     }
 
 
+def run_and_write(question: dict, run_index: int, max_steps: int, path_str: str) -> str:
+    """Run one trace and persist it. Top-level (picklable) so a process pool can
+    dispatch it. Each worker process has its own copy of the module-global
+    retrieval state (CURRENT_PARAGRAPHS / BM25_INDEX / TOOL_EVENTS), so concurrent
+    traces never clobber each other's pool or interleave TOOL_EVENTS."""
+    trace = run_one(question, run_index, max_steps)
+    Path(path_str).write_text(
+        json.dumps(trace, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
+    return path_str
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=int(os.getenv("RUNS_PER_QUESTION", "3")))
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("MAX_STEPS", "8")))
+    parser.add_argument("--workers", type=int, default=int(os.getenv("RUN_WORKERS", "1")),
+                        help="Parallel trace processes. 1 = sequential (default). "
+                             "Traces are independent and API-bound, so this scales "
+                             "near-linearly until the model's rate limit.")
     parser.add_argument("--qid", help="Optional single question id for smoke tests.")
     parser.add_argument("--limit", type=int, help="Optional number of questions for smoke tests.")
     parser.add_argument("--questions", default=str(QUESTIONS_PATH),
@@ -227,15 +250,35 @@ def main() -> None:
         questions = questions[: args.limit]
 
     traces_dir.mkdir(parents=True, exist_ok=True)
-    total = len(questions) * args.runs
-    count = 0
-    for question in questions:
-        for run_index in range(1, args.runs + 1):
-            count += 1
-            path = traces_dir / f"trace_{safe_trace_id(question['id'])}_{run_index}.json"
-            print(f"[{count}/{total}] {path}")
-            trace = run_one(question, run_index, args.max_steps)
-            path.write_text(json.dumps(trace, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    tasks = [
+        (question, run_index, args.max_steps,
+         str(traces_dir / f"trace_{safe_trace_id(question['id'])}_{run_index}.json"))
+        for question in questions
+        for run_index in range(1, args.runs + 1)
+    ]
+    total = len(tasks)
+
+    if args.workers <= 1:
+        for count, task in enumerate(tasks, start=1):
+            print(f"[{count}/{total}] {task[3]}", flush=True)
+            run_and_write(*task)
+        return
+
+    # I/O-bound fan-out across processes. Process (not thread) isolation keeps the
+    # module-global retrieval state per-trace; a single hung API call only stalls
+    # its own worker, not the whole batch.
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    print(f"Running {total} traces across {args.workers} workers", flush=True)
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(run_and_write, *task): task for task in tasks}
+        for count, future in enumerate(as_completed(futures), start=1):
+            task = futures[future]
+            try:
+                future.result()
+                print(f"[{count}/{total}] done {task[3]}", flush=True)
+            except Exception as exc:  # keep the batch alive; surface the failure
+                print(f"[{count}/{total}] FAILED {task[3]}: {exc}", flush=True)
 
 
 if __name__ == "__main__":

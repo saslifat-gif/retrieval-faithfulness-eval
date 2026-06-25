@@ -155,6 +155,13 @@ def main() -> None:
 
     detector = evaluate_predictor(rows, lambda t: bool(t.get("has_unverified_substitution")))
     baseline_any_flag = evaluate_predictor(rows, lambda t: bool(t.get("leakage_flags")))
+    # Structural silent-bridge signal and the lexical-OR-structural combination.
+    # Computed live from the two base fields so the comparison holds even if a
+    # trace was scored before has_unverified_substitution_combined existed.
+    structural = evaluate_predictor(rows, lambda t: bool(t.get("has_silent_substitution")))
+    combined = evaluate_predictor(
+        rows, lambda t: bool(t.get("has_unverified_substitution")) or bool(t.get("has_silent_substitution"))
+    )
     classifier = flag_classifier_report(labels, traces_by_key)
 
     total_scored = len(traces_by_key)
@@ -173,6 +180,8 @@ def main() -> None:
         "gold_positive_rate": round(n_pos / n, 3),
         "majority_class_accuracy": round(majority_accuracy, 3),
         "detector": detector,
+        "detector_structural_only": structural,
+        "detector_lexical_or_structural": combined,
         "baseline_any_lexical_flag": baseline_any_flag,
         "flag_type_classifier": classifier,
     }
@@ -193,7 +202,9 @@ def main() -> None:
     print(f"  majority-class accuracy   = {majority_accuracy:.3f}")
     print_block("baseline: any lexical flag fired (ignores the 3-way classifier)", baseline_any_flag)
 
-    print_block(">>> DETECTOR: has_unverified_substitution", detector)
+    print_block(">>> DETECTOR (lexical only): has_unverified_substitution", detector)
+    print_block("    structural only: has_silent_substitution", structural)
+    print_block(">>> COMBINED: lexical OR structural", combined)
 
     if classifier:
         print(f"\n--- flag-type classifier ({classifier['graded_flag_count']} graded flags) ---")
@@ -214,6 +225,21 @@ def main() -> None:
     d_f1 = detector["f1"]
     if d_f1 is not None and b_f1 is not None and d_f1 <= b_f1:
         print("  The 3-way classifier does NOT beat raw lexical matching — it may add no value over regex.")
+    # Does the structural signal earn its place? Report its marginal effect on the
+    # lexical detector: recall it recovers vs. precision it costs.
+    d_rec, c_rec = detector["recall"], combined["recall"]
+    d_prec, c_prec = detector["precision"], combined["precision"]
+    if None not in (d_rec, c_rec, d_prec, c_prec):
+        rec_gain = c_rec - d_rec
+        prec_cost = d_prec - c_prec
+        if rec_gain > 0:
+            print(f"  Structural signal recovers recall +{rec_gain:.3f} "
+                  f"(catches silent bridges) at precision {prec_cost:+.3f}.")
+        elif combined["fp"] > detector["fp"]:
+            print(f"  Structural signal adds no recall here but costs "
+                  f"{combined['fp'] - detector['fp']} false positives — not worth combining on this set.")
+        else:
+            print("  Structural signal changes nothing on this set (no silent bridges among labeled positives).")
     print(f"\nsaved {args.report}")
 
 
