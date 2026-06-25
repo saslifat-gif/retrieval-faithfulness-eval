@@ -15,12 +15,26 @@ from rapidfuzz import fuzz
 TRACES_DIR = Path("traces")
 LEAKAGE_PATTERNS = [
     r"\bI know\b",
+    r"\bI recall\b",
+    r"\bI remember\b",
     r"\bit is known\b",
-    r"\bfrom (my )?(general|world|standard|historical) knowledge\b",
+    r"\bfrom (my )?(general|world|common|standard|historical) knowledge\b",
+    r"\bgeneral historical knowledge\b",
+    r"\bcommon knowledge\b",
+    r"\breal[- ]world knowledge\b",
+    r"\bexternal knowledge\b",
     r"\boutside (the )?(retrieved|provided|given) (text|passages|pool)\b",
     r"\bnot (in|from) the (retrieved|provided|given) (text|passages|pool)\b",
+    r"\bnot (explicitly|directly) (stated?|mentioned?|supported|linked|answered)\b",
+    r"\bdoes(n't| not|n’t) explicitly (state|mention|say|contain|include)\b",
+    r"\bparagraph pool (does(n't| not|n’t)|does not) contain\b",
     r"\bmust not use\b",
     r"\bI can infer\b",
+    r"\bI'll assume\b",
+    r"\blikely the same person\b",
+    r"\bif I had to guess\b",
+    r"\bbest guess\b",
+    r"\bmost plausible\b",
 ]
 
 

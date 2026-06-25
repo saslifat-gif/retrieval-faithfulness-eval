@@ -189,7 +189,10 @@ def main() -> None:
     parser.add_argument("--dataset", default=os.getenv("MUSIQUE_DATASET", ""))
     parser.add_argument("--config", default=os.getenv("MUSIQUE_CONFIG") or None)
     parser.add_argument("--splits", default=os.getenv("MUSIQUE_SPLITS", ",".join(DEFAULT_SPLITS)))
+    parser.add_argument("--out", default=os.getenv("QUESTIONS_PATH", str(OUTPUT_PATH)),
+                        help="Where to write the sampled questions (default questions.json).")
     args = parser.parse_args()
+    out_path = Path(args.out)
 
     dataset_names = [args.dataset] if args.dataset else [item[0] for item in DEFAULT_CANDIDATES]
     split_names = [item.strip() for item in args.splits.split(",") if item.strip()]
@@ -208,9 +211,10 @@ def main() -> None:
         raise SystemExit(f"Only found {len(rows)} usable rows; need {args.sample_size}.")
     sample = rng.sample(rows, args.sample_size)
 
-    OUTPUT_PATH.write_text(json.dumps(sample, indent=2, ensure_ascii=False), encoding="utf-8")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(sample, indent=2, ensure_ascii=False), encoding="utf-8")
     print(
-        f"Wrote {OUTPUT_PATH} with {len(sample)} questions from {dataset_name}/{split_name} "
+        f"Wrote {out_path} with {len(sample)} questions from {dataset_name}/{split_name} "
         f"(usable 2/3-hop rows: {len(rows)}, seed: {args.seed})"
     )
 

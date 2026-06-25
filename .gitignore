@@ -4,5 +4,8 @@ questions.json
 shop.db
 traces/
 stage1_summary.json
+labels/
+validation_report.json
+heldout/
 __pycache__/
 *.pyc

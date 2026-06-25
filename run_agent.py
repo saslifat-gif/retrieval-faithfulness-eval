@@ -207,12 +207,18 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("MAX_STEPS", "8")))
     parser.add_argument("--qid", help="Optional single question id for smoke tests.")
     parser.add_argument("--limit", type=int, help="Optional number of questions for smoke tests.")
+    parser.add_argument("--questions", default=str(QUESTIONS_PATH),
+                        help="Questions file to run (default questions.json).")
+    parser.add_argument("--traces-dir", default=str(TRACES_DIR),
+                        help="Where to write traces (default traces/).")
     args = parser.parse_args()
 
-    if not QUESTIONS_PATH.exists():
-        raise SystemExit("questions.json missing. Run: python load_data.py")
+    questions_path = Path(args.questions)
+    traces_dir = Path(args.traces_dir)
+    if not questions_path.exists():
+        raise SystemExit(f"{questions_path} missing. Run: python load_data.py --out {questions_path}")
 
-    questions = json.loads(QUESTIONS_PATH.read_text(encoding="utf-8"))
+    questions = json.loads(questions_path.read_text(encoding="utf-8"))
     if args.qid:
         questions = [item for item in questions if item["id"] == args.qid]
         if not questions:
@@ -220,13 +226,13 @@ def main() -> None:
     if args.limit:
         questions = questions[: args.limit]
 
-    TRACES_DIR.mkdir(exist_ok=True)
+    traces_dir.mkdir(parents=True, exist_ok=True)
     total = len(questions) * args.runs
     count = 0
     for question in questions:
         for run_index in range(1, args.runs + 1):
             count += 1
-            path = TRACES_DIR / f"trace_{safe_trace_id(question['id'])}_{run_index}.json"
+            path = traces_dir / f"trace_{safe_trace_id(question['id'])}_{run_index}.json"
             print(f"[{count}/{total}] {path}")
             trace = run_one(question, run_index, args.max_steps)
             path.write_text(json.dumps(trace, indent=2, ensure_ascii=False, default=str), encoding="utf-8")

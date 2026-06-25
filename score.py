@@ -215,12 +215,26 @@ def retrieval_candidates(trace: dict) -> list[dict]:
 def lexical_leakage_flags(trace: dict) -> list[dict]:
     patterns = [
         r"\bI know\b",
+        r"\bI recall\b",
+        r"\bI remember\b",
         r"\bit is known\b",
-        r"\bfrom (my )?(general|world|standard|historical) knowledge\b",
+        r"\bfrom (my )?(general|world|common|standard|historical) knowledge\b",
+        r"\bgeneral historical knowledge\b",
+        r"\bcommon knowledge\b",
+        r"\breal[- ]world knowledge\b",
+        r"\bexternal knowledge\b",
         r"\boutside (the )?(retrieved|provided|given) (text|passages|pool)\b",
         r"\bnot (in|from) the (retrieved|provided|given) (text|passages|pool)\b",
+        r"\bnot (explicitly|directly) (stated?|mentioned?|supported|linked|answered)\b",
+        r"\bdoes(n't| not|n’t) explicitly (state|mention|say|contain|include)\b",
+        r"\bparagraph pool (does(n't| not|n’t)|does not) contain\b",
         r"\bmust not use\b",
         r"\bI can infer\b",
+        r"\bI'll assume\b",
+        r"\blikely the same person\b",
+        r"\bif i had to guess\b",
+        r"\bbest guess\b",
+        r"\bmost plausible\b",
     ]
     flags = []
     items = [("final_answer", None, trace.get("final_answer"))]
@@ -240,6 +254,8 @@ def lexical_leakage_flags(trace: dict) -> list[dict]:
 def classify_leakage_quote(quote: str) -> str:
     text = quote.lower()
     noise_patterns = [
+        r"\b(avoid|not|never) using external knowledge\b",
+        r"\bmust (verify|use retrieval|avoid using external knowledge)\b",
         r"\bit usually has\b",
         r"\btypically has\b",
         r"\boften has\b",
@@ -249,13 +265,40 @@ def classify_leakage_quote(quote: str) -> str:
 
     unverified_patterns = [
         r"\bnot (in|from) the (retrieved|provided|given) (text|passages|pool)\b",
-        r"\b(isn't|is not|doesn't|does not|don't|do not) (explicitly )?(state|mention|contain|include)\b",
+        r"\b(isn't|is not|doesn't|does not|doesn’t|don't|do not) (explicitly )?(state|mention|contain|include|answer|link|support)\b",
+        r"\bnot (explicitly|directly) (stated?|mentioned?|supported|linked|answered)\b",
         r"\bmust not use\b",
         r"\bbut i know\b",
-        r"\bI know from (general|common|standard|historical) knowledge\b",
+        r"\bi know from (general|common|standard|historical) knowledge\b",
         r"\bfrom (my )?(general|common|standard|historical) knowledge\b",
+        r"\bhistorical knowledge says\b",
+        r"\bfrom what i know\b",
+        r"\bgeneral historical knowledge\b",
+        r"\bcommon knowledge\b",
+        r"\bstandard knowledge\b",
+        r"\bcommonly known\b",
+        r"\breal[- ]world knowledge\b",
+        r"\bexternal knowledge\b",
+        r"\bin real life\b",
+        r"\bfrom wikipedia\b",
         r"\bfrom my knowledge\b",
-        r"\bI recall\b",
+        r"\bi recall\b.*\b(married|died in barcelona|greyhound|toronto coach terminal|nelvana)\b",
+        r"\bi remember\b",
+        r"\bi'll assume\b",
+        r"\blikely the same person\b",
+        r"\bif i had to guess\b",
+        r"\bbest guess\b",
+        r"\bmost plausible\b",
+        r"\bteaches at\b.*\bnot (necessarily )?that he attended\b",
+        r"\bonly connection to .*manalo\b",
+        r"\bparagraph pool (doesn't|does not|doesn’t) contain\b",
+        r"\bprovided paragraph[s]? (do not|don't|does not|doesn't|doesn’t) (state|mention|contain|include)\b",
+        r"\bcannot (definitively )?determine\b",
+        r"\bnot (available|found) in the (provided |retrieved )?(paragraphs|passages|pool)\b",
+        r"\bnot directly supported\b",
+        r"\boff the east coast should be\b",
+        r"\bpuerto rico trench is clearly the deepest point\b",
+        r"\bdeepest part of that ocean\b",
     ]
     if any(re.search(pattern, text) for pattern in unverified_patterns):
         return "unverified_substitution"
