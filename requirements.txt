@@ -6,3 +6,7 @@ datasets
 huggingface_hub
 rank_bm25
 rapidfuzz
+# RAGBench grounding adapter: embedding / NLI / HHEM scorers (--method embedding|nli|hhem)
+sentence-transformers
+sentencepiece
+protobuf

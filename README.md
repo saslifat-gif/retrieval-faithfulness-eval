@@ -238,35 +238,47 @@ The adapter writes only under gitignored `ragbench/`. Each record maps:
 - `unsupported_response_sentence_keys` -> sentence-level gold unsupported labels
 - `adherence_score` -> response-level gold label
 
-The predictor marks a response sentence unsupported when its best support against any
-document sentence falls below threshold. Two scorers are pluggable via `--method`:
+The predictor marks a response sentence unsupported when its best support against the
+document falls below threshold. Four scorers are pluggable via `--method` (plus
+`--granularity response` for HHEM's native whole-response-vs-whole-document mode):
 
 ```bash
-python ragbench_adapter.py --method lexical                       # fuzzy token overlap
-python ragbench_adapter.py --method embedding --threshold 50      # sentence-embedding cosine
+python ragbench_adapter.py --method lexical                              # fuzzy token overlap
+python ragbench_adapter.py --method embedding --threshold 50             # sentence-embedding cosine
+python ragbench_adapter.py --method nli      --threshold 50              # NLI entailment (cross-encoder)
+python ragbench_adapter.py --method hhem     --threshold 50              # Vectara HHEM faithfulness
+python ragbench_adapter.py --method hhem --granularity response --threshold 50   # HHEM native
 ```
 
-On full DelucionQA (`n=1,826`, `10,027` response sentences), against RAGBench's
-LLM-judged adherence labels (gold ungrounded rate only 0.066):
+On full DelucionQA (`n=1,826`, `10,027` response sentences) against RAGBench's
+LLM-judged adherence labels (gold ungrounded rate only 0.066). AUROC is the
+product-relevant metric — F1 at a fixed threshold is punished by the 6.6% positive
+rate even when ranking is fine:
 
 ```text
-                 response Acc   response F1*   sentence F1*   exact-set-match
-lexical            0.395          0.144          0.085          0.361
-embedding          0.743          0.151          0.088          0.724
-                                  (* best-swept threshold)
+method (granularity)        best response F1   AUROC   why
+lexical                          0.144          0.58    token overlap; over-flags paraphrase
+embedding (cosine)               0.151          0.58    relatedness != support
+nli (vanilla MNLI)               0.133          ~0.50   under-entails grounded paraphrase
+hhem (sentence)                  0.158          0.65    right tool, hard granularity
+hhem (response, native)          0.198          0.68    best of all — still not product-grade
 ```
 
-Embeddings fix the over-flagging (accuracy and exact-unsupported-set match jump
-sharply — the check stops crying "ungrounded" on every paraphrase) but do **not**
-solve the actual job: F1 on the positive class stays ~0.15. The reason is structural,
-shown by the support-score distributions — gold-supported sentences have median cosine
-82, gold-**un**supported 70, with 27% of unsupported sentences scoring above the
-supported median. Both lexical and embedding are *similarity* measures, and a plausible
-RAG hallucination is on-topic, so similarity cannot separate "supported" from
-"on-topic-but-fabricated." Localizing the unsupported sentence needs **entailment**
-(does the context actually support this claim?), i.e. an NLI cross-encoder or an LLM
-judge — the next rung. The similarity family (lexical and embedding) is ruled out with
-data; embedding remains the don't-over-flag baseline.
+**Finding: no affordable local method reaches product quality here.** The progression
+is informative. Lexical and embedding are *similarity* measures, and a plausible RAG
+hallucination is on-topic, so similarity cannot separate "supported" from
+"on-topic-but-fabricated." Vanilla NLI scores grounded paraphrase as *neutral* (median
+entailment 4/100 on genuinely-supported sentences) and over-flags everything. HHEM, a
+purpose-built faithfulness model, is best calibrated (grounded median 93–96) and gives
+the widest separation, but still tops out at AUROC 0.68 — because DelucionQA marks a
+response ungrounded for even one bad sentence, while a whole-response consistency score
+is dominated by the mostly-grounded bulk (ungrounded median 89 vs grounded 96).
+
+Both granularities cap at AUROC ~0.65–0.68. The practical implication: grounding at
+this difficulty needs an **LLM judge** (which is what RAGBench's gold labels are), with
+its cost/latency, or a narrower scope — a coarse "review this" triage queue that
+tolerates ~0.68 ranking with a human in the loop. The cheap, hands-off detector is not
+reachable on DelucionQA-grade sentence-level grounding.
 
 ## Current Small Validation Result
 
