@@ -238,21 +238,35 @@ The adapter writes only under gitignored `ragbench/`. Each record maps:
 - `unsupported_response_sentence_keys` -> sentence-level gold unsupported labels
 - `adherence_score` -> response-level gold label
 
-The cheap predictor marks a response sentence unsupported when its best fuzzy lexical
-match against any document sentence falls below `RAGBENCH_SUPPORT_THRESHOLD`
-(default `75`). On full DelucionQA (`n=1,826`, `10,027` response sentences), this
-stdlib lexical check is not strong enough:
+The predictor marks a response sentence unsupported when its best support against any
+document sentence falls below threshold. Two scorers are pluggable via `--method`:
 
-```text
-response-level: P=0.077 R=0.742 F1=0.139 Acc=0.395
-sentence-level: P=0.044 R=0.481 F1=0.080 Acc=0.743
-best swept response F1=0.144; best swept sentence F1=0.085
+```bash
+python ragbench_adapter.py --method lexical                       # fuzzy token overlap
+python ragbench_adapter.py --method embedding --threshold 50      # sentence-embedding cosine
 ```
 
-The failure mode is grounded paraphrase and synthesis: RAGBench's gold labels are
-LLM-judged entailment labels, while the cheap check is lexical overlap. That is a
-useful negative result: DelucionQA justifies an embedding/NLI/judge upgrade for
-production grounding, rather than relying on fuzzy sentence matching.
+On full DelucionQA (`n=1,826`, `10,027` response sentences), against RAGBench's
+LLM-judged adherence labels (gold ungrounded rate only 0.066):
+
+```text
+                 response Acc   response F1*   sentence F1*   exact-set-match
+lexical            0.395          0.144          0.085          0.361
+embedding          0.743          0.151          0.088          0.724
+                                  (* best-swept threshold)
+```
+
+Embeddings fix the over-flagging (accuracy and exact-unsupported-set match jump
+sharply — the check stops crying "ungrounded" on every paraphrase) but do **not**
+solve the actual job: F1 on the positive class stays ~0.15. The reason is structural,
+shown by the support-score distributions — gold-supported sentences have median cosine
+82, gold-**un**supported 70, with 27% of unsupported sentences scoring above the
+supported median. Both lexical and embedding are *similarity* measures, and a plausible
+RAG hallucination is on-topic, so similarity cannot separate "supported" from
+"on-topic-but-fabricated." Localizing the unsupported sentence needs **entailment**
+(does the context actually support this claim?), i.e. an NLI cross-encoder or an LLM
+judge — the next rung. The similarity family (lexical and embedding) is ruled out with
+data; embedding remains the don't-over-flag baseline.
 
 ## Current Small Validation Result
 

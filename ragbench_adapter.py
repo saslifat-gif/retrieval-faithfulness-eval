@@ -115,7 +115,42 @@ def best_document_support(response_sentence: str, document_sentences: list[dict]
     return best
 
 
-def score_row(row: dict, row_index: int, threshold: float, dataset: str, config: str, split: str) -> dict | None:
+_EMBEDDER: Any = None
+
+
+def get_embedder(model_name: str) -> Any:
+    global _EMBEDDER
+    if _EMBEDDER is None:
+        from sentence_transformers import SentenceTransformer
+
+        _EMBEDDER = SentenceTransformer(model_name)
+    return _EMBEDDER
+
+
+def best_supports_embedding(response_texts: list[str], document_sentences: list[dict], model: Any) -> list[dict]:
+    """Max-pooled cosine support per response sentence. Cosine (normalized embeddings)
+    is scaled to 0-100 so it shares the lexical scorer's range and the same threshold
+    sweep applies. This is the entailment-aware upgrade: it sees supported paraphrase /
+    synthesis that token overlap misses."""
+    doc_texts = [item["text"] for item in document_sentences]
+    resp_emb = model.encode(response_texts, normalize_embeddings=True, convert_to_numpy=True)
+    doc_emb = model.encode(doc_texts, normalize_embeddings=True, convert_to_numpy=True)
+    sims = resp_emb @ doc_emb.T
+    bests = []
+    for index in range(len(response_texts)):
+        best_doc = int(sims[index].argmax())
+        bests.append(
+            {
+                "score": round(float(sims[index][best_doc]) * 100.0, 2),
+                "document_sentence_key": document_sentences[best_doc]["key"],
+                "document_sentence": document_sentences[best_doc]["text"],
+            }
+        )
+    return bests
+
+
+def score_row(row: dict, row_index: int, threshold: float, dataset: str, config: str, split: str,
+              method: str = "lexical", model: Any = None) -> dict | None:
     response = as_text(row.get("response"))
     query = as_text(row.get("question") or row.get("query"))
     if not response or not query:
@@ -129,10 +164,13 @@ def score_row(row: dict, row_index: int, threshold: float, dataset: str, config:
 
     gold_unsupported = key_set(row.get("unsupported_response_sentence_keys"))
     gold_adherence = as_bool(row.get("adherence_score"))
+    if method == "embedding":
+        supports = best_supports_embedding([item["text"] for item in response_sentences], document_sentences, model)
+    else:
+        supports = [best_document_support(item["text"], document_sentences) for item in response_sentences]
     sentence_scores = []
     predicted_unsupported = set()
-    for item in response_sentences:
-        best = best_document_support(item["text"], document_sentences)
+    for item, best in zip(response_sentences, supports):
         supported = best["score"] >= threshold
         if not supported:
             predicted_unsupported.add(item["key"])
@@ -154,6 +192,7 @@ def score_row(row: dict, row_index: int, threshold: float, dataset: str, config:
         "dataset": dataset,
         "config": config,
         "split": split,
+        "method": method,
         "query": query,
         "response": response,
         "adherence_score": gold_adherence,
@@ -195,11 +234,21 @@ def main() -> None:
                         help="Dataset split to use, 'auto' for test/validation/train preference, or 'all'.")
     parser.add_argument("--limit", type=int, default=0,
                         help="Optional row limit for smoke tests. 0 means all rows.")
-    parser.add_argument("--threshold", type=float, default=float(os.getenv("RAGBENCH_SUPPORT_THRESHOLD", "75")))
+    parser.add_argument("--method", choices=["lexical", "embedding"], default="lexical",
+                        help="Grounding support scorer: lexical fuzzy match or sentence-embedding cosine.")
+    parser.add_argument("--threshold", type=float,
+                        default=float(os.getenv("RAGBENCH_SUPPORT_THRESHOLD", "75")),
+                        help="Support cutoff on the 0-100 scale (sweep in validate.py finds the best).")
     parser.add_argument("--out", default=str(DEFAULT_RECORDS_PATH))
     args = parser.parse_args()
 
-    print(f"Loading {args.dataset}/{args.config} split={args.split} ...", flush=True)
+    model = None
+    if args.method == "embedding":
+        embed_model = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")
+        print(f"Loading embedding model {embed_model} ...", flush=True)
+        model = get_embedder(embed_model)
+
+    print(f"Loading {args.dataset}/{args.config} split={args.split} method={args.method} ...", flush=True)
     dataset = load_dataset(args.dataset, args.config)
     splits = choose_splits(dataset, args.split)
 
@@ -208,7 +257,8 @@ def main() -> None:
         for row_index, row in enumerate(rows):
             if args.limit and len(records) >= args.limit:
                 break
-            record = score_row(dict(row), row_index, args.threshold, args.dataset, args.config, split_name)
+            record = score_row(dict(row), row_index, args.threshold, args.dataset, args.config, split_name,
+                               args.method, model)
             if record is not None:
                 records.append(record)
         if args.limit and len(records) >= args.limit:
