@@ -72,6 +72,128 @@ def print_block(title: str, m: dict[str, Any]) -> None:
     print(f"  tp={m['tp']} fp={m['fp']} fn={m['fn']} tn={m['tn']}  (n={m['n']})")
 
 
+def validate_ragbench(records_path: Path, report_path: Path) -> None:
+    records = json.loads(records_path.read_text(encoding="utf-8"))
+    if not records:
+        raise SystemExit(f"No records in {records_path}")
+
+    response_pairs = [
+        (bool(row.get("predicted_ungrounded_response")), bool(row.get("gold_ungrounded_response")))
+        for row in records
+    ]
+    response_detector = metrics(confusion(response_pairs))
+    response_all_grounded = metrics(confusion([(False, gold) for _, gold in response_pairs]))
+    n_pos = sum(1 for _, gold in response_pairs if gold)
+    n_neg = len(response_pairs) - n_pos
+    response_majority_accuracy = max(n_pos, n_neg) / len(response_pairs)
+
+    sentence_pairs = []
+    exact_set_hits = 0
+    sentence_count = 0
+    for row in records:
+        predicted_set = set(row.get("predicted_unsupported_response_sentence_keys") or [])
+        gold_set = set(row.get("gold_unsupported_response_sentence_keys") or [])
+        if predicted_set == gold_set:
+            exact_set_hits += 1
+        for sentence in row.get("sentence_scores") or []:
+            sentence_count += 1
+            key = sentence.get("response_sentence_key")
+            sentence_pairs.append((key in predicted_set, key in gold_set))
+
+    sentence_detector = metrics(confusion(sentence_pairs))
+    sentence_all_supported = metrics(confusion([(False, gold) for _, gold in sentence_pairs]))
+    exact_set_match_rate = exact_set_hits / len(records)
+
+    threshold_sweep = []
+    for threshold in range(35, 96, 5):
+        swept_response_pairs = []
+        swept_sentence_pairs = []
+        for row in records:
+            predicted_set = {
+                sentence.get("response_sentence_key")
+                for sentence in row.get("sentence_scores") or []
+                if float(sentence.get("support_score") or 0.0) < threshold
+            }
+            gold_set = set(row.get("gold_unsupported_response_sentence_keys") or [])
+            swept_response_pairs.append((bool(predicted_set), bool(row.get("gold_ungrounded_response"))))
+            for sentence in row.get("sentence_scores") or []:
+                key = sentence.get("response_sentence_key")
+                swept_sentence_pairs.append((key in predicted_set, key in gold_set))
+        threshold_sweep.append(
+            {
+                "threshold": threshold,
+                "response": metrics(confusion(swept_response_pairs)),
+                "sentence": metrics(confusion(swept_sentence_pairs)),
+            }
+        )
+
+    threshold_values = sorted({row.get("threshold") for row in records})
+    split_values = sorted({row.get("split") for row in records if row.get("split")})
+    report = {
+        "mode": "ragbench_grounding",
+        "records_path": str(records_path),
+        "record_count": len(records),
+        "sentence_count": sentence_count,
+        "dataset": records[0].get("dataset"),
+        "config": records[0].get("config"),
+        "splits": split_values,
+        "thresholds": threshold_values,
+        "gold_ungrounded_response_count": n_pos,
+        "gold_grounded_response_count": n_neg,
+        "gold_ungrounded_response_rate": round(n_pos / len(records), 3),
+        "response_majority_class_accuracy": round(response_majority_accuracy, 3),
+        "response_detector": response_detector,
+        "response_baseline_predict_all_grounded": response_all_grounded,
+        "sentence_detector": sentence_detector,
+        "sentence_baseline_predict_all_supported": sentence_all_supported,
+        "sentence_exact_unsupported_set_match_rate": round(exact_set_match_rate, 3),
+        "threshold_sweep": threshold_sweep,
+    }
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    print("=" * 80)
+    print("RAGBENCH GROUNDING VALIDATION")
+    print("=" * 80)
+    print(
+        f"records = {len(records)}  response sentences = {sentence_count}  "
+        f"dataset = {report['dataset']}/{report['config']}"
+    )
+    print(f"splits = {', '.join(split_values)}")
+    print(f"threshold(s) = {', '.join(str(item) for item in threshold_values)}")
+    print(
+        f"gold ungrounded responses = {n_pos}  grounded = {n_neg}  "
+        f"ungrounded_rate = {n_pos / len(records):.3f}"
+    )
+
+    print("\n--- response-level: any unsupported sentence ---")
+    print(f"  majority-class accuracy        = {response_majority_accuracy:.3f}")
+    print_block("baseline: predict every response is grounded", response_all_grounded)
+    print_block(">>> DETECTOR: any low-support sentence", response_detector)
+
+    print("\n--- sentence-level: unsupported response sentences ---")
+    print_block("baseline: predict every sentence is supported", sentence_all_supported)
+    print_block(">>> DETECTOR: low lexical support sentence", sentence_detector)
+    print(f"  exact unsupported-set match = {exact_set_match_rate:.3f}")
+
+    print("\n--- read ---")
+    if response_detector["accuracy"] is not None and response_detector["accuracy"] <= response_majority_accuracy:
+        print("  Response-level detector does NOT beat the majority class.")
+    if sentence_detector["f1"] is not None and sentence_detector["f1"] <= (sentence_all_supported["f1"] or 0.0):
+        print("  Sentence-level detector does NOT beat predict-all-supported.")
+    best_response = max(threshold_sweep, key=lambda item: item["response"]["f1"] or 0.0)
+    best_sentence = max(threshold_sweep, key=lambda item: item["sentence"]["f1"] or 0.0)
+    print(
+        f"  Best swept response F1 = {best_response['response']['f1']:.3f} "
+        f"at threshold {best_response['threshold']}."
+    )
+    print(
+        f"  Best swept sentence F1 = {best_sentence['sentence']['f1']:.3f} "
+        f"at threshold {best_sentence['threshold']}."
+    )
+    print("  This evaluates cheap lexical grounding against RAGBench's judged adherence labels.")
+    print(f"\nsaved {report_path}")
+
+
 def flag_classifier_report(labels: dict[str, dict], traces_by_key: dict[str, dict]) -> dict[str, Any] | None:
     """Per-flag type accuracy, when flags were graded during labeling."""
     rows = []
@@ -112,7 +234,13 @@ def main() -> None:
     parser.add_argument("--report", default=str(REPORT_PATH))
     parser.add_argument("--include-stale", action="store_true",
                         help="Include labels whose trace reasoning changed since labeling.")
+    parser.add_argument("--ragbench-records",
+                        help="Validate RAGBench grounding records produced by ragbench_adapter.py.")
     args = parser.parse_args()
+
+    if args.ragbench_records:
+        validate_ragbench(Path(args.ragbench_records), Path(args.report))
+        return
 
     labels_path = Path(args.labels)
     if not labels_path.exists():

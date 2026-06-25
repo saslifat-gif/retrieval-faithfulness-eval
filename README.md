@@ -216,6 +216,44 @@ Oregon). Closing that gap needs a structural ungrounded-bridge signal, not more
 lexical cues; a retrieval-absence signal was tried and refuted (MuSiQue's gold bridge
 is almost always in the retrieved pool, so absence is not the discriminator).
 
+## RAGBench Grounding Adapter
+
+RAGBench/DelucionQA validates a different instrument: sentence-level grounding of a
+final response against retrieved documents. It does **not** validate the MuSiQue
+lexical substitution detector, because RAGBench has no reasoning trace.
+
+Build scored records and validate them:
+
+```bash
+python ragbench_adapter.py
+python validate.py --ragbench-records ragbench/delucionqa_records.json \
+                   --report ragbench/validation_report.json
+```
+
+The adapter writes only under gitignored `ragbench/`. Each record maps:
+
+- `question` -> `query`
+- `documents_sentences` -> addressable retrieved context
+- `response_sentences` -> answer sentences to check
+- `unsupported_response_sentence_keys` -> sentence-level gold unsupported labels
+- `adherence_score` -> response-level gold label
+
+The cheap predictor marks a response sentence unsupported when its best fuzzy lexical
+match against any document sentence falls below `RAGBENCH_SUPPORT_THRESHOLD`
+(default `75`). On full DelucionQA (`n=1,826`, `10,027` response sentences), this
+stdlib lexical check is not strong enough:
+
+```text
+response-level: P=0.077 R=0.742 F1=0.139 Acc=0.395
+sentence-level: P=0.044 R=0.481 F1=0.080 Acc=0.743
+best swept response F1=0.144; best swept sentence F1=0.085
+```
+
+The failure mode is grounded paraphrase and synthesis: RAGBench's gold labels are
+LLM-judged entailment labels, while the cheap check is lexical overlap. That is a
+useful negative result: DelucionQA justifies an embedding/NLI/judge upgrade for
+production grounding, rather than relying on fuzzy sentence matching.
+
 ## Current Small Validation Result
 
 After source-validated extraction on 15 traces, the current output is:

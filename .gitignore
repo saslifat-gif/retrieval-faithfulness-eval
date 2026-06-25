@@ -7,5 +7,6 @@ stage1_summary.json
 labels/
 validation_report.json
 heldout/
+ragbench/
 __pycache__/
 *.pyc
