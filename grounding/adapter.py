@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,8 @@ os.environ.setdefault("HF_DATASETS_CACHE", str(Path(".hf_cache/datasets").resolv
 
 from datasets import DatasetDict, load_dataset
 
-from score import match_score, split_sentences
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from common.text import match_score, split_sentences  # noqa: E402
 
 
 OUT_DIR = Path("ragbench")

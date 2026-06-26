@@ -4,12 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Stage-1 evaluation harness that measures whether a `smolagents` multi-hop QA
-agent reaches correct answers **through retrieved evidence** or by substituting
-its own parametric knowledge. It is evaluation only — no corruption injection, RL,
-or training. The headline signal is `frac_unverified_substitution`; step-faithfulness
-`divergence_rate` is a secondary diagnostic. See `README.md` for metric definitions
-and the current small-`n` validation numbers.
+Tools for measuring whether an LLM answer is **grounded in retrieved evidence**
+or substitutes the model's own parametric knowledge. Evaluation only — no
+corruption injection, RL, or training. The repo has three areas:
+
+- **`grounding/`** — the product. A sentence-level RAG grounding instrument
+  (`grounding/adapter.py`, RAGBench/DelucionQA): given `(question, documents,
+  response)` it flags unsupported response sentences. No gold needed at inference.
+- **`benchmark/`** — the MuSiQue retrieval-faithfulness harness (research /
+  entry point). Runs a `smolagents` multi-hop agent and detects *unverified
+  substitution*. Headline signal `frac_unverified_substitution`; step-faithfulness
+  `divergence_rate` is a secondary diagnostic.
+- **`validation/`** — shared metric-validation (`label.py` / `validate.py`):
+  precision/recall/F1 of a detector vs human labels.
+- **`common/text.py`** — shared `normalize` / `match_score` / `split_sentences`,
+  imported by both `benchmark/score.py` and `grounding/adapter.py`.
+
+**Run all scripts from the repository root** — data dirs (`traces/`, `labels/`,
+`ragbench/`, `heldout/`) and `questions.json` resolve relative to the working
+directory. Scripts in subpackages add the repo root to `sys.path` so
+`from common.text import ...` works regardless of CWD. See `README.md` for metric
+definitions and the current validation numbers.
 
 ## Setup & commands
 
@@ -27,43 +42,48 @@ calls `os.getenv` with its own defaults.
 There is no test suite or linter. The smoke test is the substitute for tests:
 
 ```bash
-python run_agent.py --limit 1 --runs 1 --max-steps 12   # single question, single run
-python run_agent.py --qid <id> --runs 1                  # one specific question by id
+python benchmark/run_agent.py --limit 1 --runs 1 --max-steps 12   # single question, single run
+python benchmark/run_agent.py --qid <id> --runs 1                  # one specific question by id
 ```
 
-## The pipeline is an ordered, stateful sequence
+## The benchmark pipeline is an ordered, stateful sequence
 
 Each stage reads and **mutates the per-trace JSON files in `traces/` in place**, adding
-new keys for the next stage. Run them in this exact order; a later stage silently
-produces empty/degraded output if an earlier one did not run.
+new keys for the next stage. Run them in this exact order, **from the repo root**; a
+later stage silently produces empty/degraded output if an earlier one did not run.
 
-1. `python load_data.py` → writes `questions.json` (samples 30 answerable MuSiQue
+1. `python benchmark/load_data.py` → writes `questions.json` (samples 30 answerable MuSiQue
    2-hop/3-hop questions from HF; 4-hop intentionally skipped; seeded, default seed 1729).
-2. `python run_agent.py --runs 3 --max-steps 12` → runs the `CodeAgent` per question/run,
+2. `python benchmark/run_agent.py --runs 3 --max-steps 12` → runs the `CodeAgent` per question/run,
    writes `traces/trace_{id}_{run}.json` with steps, retrieval calls, reasoning, final answer.
-3. `python extract_hops.py --reextract` → LLM extractor recovers stated hop conclusions
+3. `python benchmark/extract_hops.py --reextract` → LLM extractor recovers stated hop conclusions
    into `extracted_hop_conclusions`; also fills `leakage_flags`. `--reextract` forces
    re-running even if conclusions already exist.
-4. `python score.py` → scores final/intermediate hits, retrieval coverage, leakage types;
+4. `python benchmark/score.py` → scores final/intermediate hits, retrieval coverage, leakage types;
    writes the scoring keys back into each trace.
-5. `python analyze.py` → aggregates all scored traces into `stage1_summary.json` and prints metrics.
-6. `python review.py` then re-run `python analyze.py` → optional human review queue.
+5. `python benchmark/analyze.py` → aggregates all scored traces into `stage1_summary.json` and prints metrics.
+6. `python benchmark/review.py` then re-run `python benchmark/analyze.py` → optional human review queue.
    **Run `review.py` from an activated shell, not `conda run`** — it needs interactive stdin.
+
+The grounding instrument is separate from this pipeline:
+`python grounding/adapter.py` builds scored RAGBench records under `ragbench/`,
+then `python validation/validate.py --ragbench-records ragbench/delucionqa_records.json`
+validates them.
 
 `questions.json`, `traces/`, `shop.db`, `stage1_summary.json`, and `.hf_cache/` are
 gitignored. `questions.example.json` is the schema-only safe-to-commit example.
 Never publish `questions.json` (contains gold answers).
 
-## Metric-validation track (`label.py` → `validate.py`)
+## Metric-validation track (`validation/label.py` → `validation/validate.py`)
 
 Separate from the scoring pipeline. This measures whether the headline detector
 (`has_unverified_substitution`) actually agrees with human judgment — i.e. whether
 the product's core number is trustworthy. Stdlib only; no model calls.
 
 ```bash
-python label.py                 # interactive: hand-label each scored trace y/n for substitution
-python label.py --grade-flags   # additionally grade each fired flag's type (for classifier metrics)
-python validate.py              # precision/recall/F1 of the detector vs labels, + baselines to beat
+python validation/label.py                 # interactive: hand-label each scored trace y/n for substitution
+python validation/label.py --grade-flags   # additionally grade each fired flag's type (for classifier metrics)
+python validation/validate.py              # precision/recall/F1 of the detector vs labels, + baselines to beat
 ```
 
 - Run `label.py` from an **interactive shell** (it reads stdin), like `review.py`.
@@ -90,9 +110,9 @@ generalizes, build a fresh set with a different sampling seed and validate with 
 patterns frozen:
 
 ```bash
-python held_out.py --seed <new-seed> --runs 3 --max-steps 12   # generate+run+extract+score into heldout/
-python label.py    --traces-dir heldout/traces --labels heldout/labels.json --blind
-python validate.py --traces-dir heldout/traces --labels heldout/labels.json --report heldout/validation_report.json
+python benchmark/held_out.py  --seed <new-seed> --runs 3 --max-steps 12   # generate+run+extract+score into heldout/
+python validation/label.py    --traces-dir heldout/traces --labels heldout/labels.json --blind
+python validation/validate.py --traces-dir heldout/traces --labels heldout/labels.json --report heldout/validation_report.json
 ```
 
 `held_out.py` writes only under `heldout/` (gitignored) so it can never touch the tuned

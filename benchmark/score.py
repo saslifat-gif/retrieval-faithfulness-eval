@@ -4,33 +4,17 @@ import argparse
 import json
 import os
 import re
-import string
+import sys
 from pathlib import Path
 from typing import Any
 
 from rapidfuzz import fuzz
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from common.text import match_score, normalize, split_sentences  # noqa: E402
+
 
 TRACES_DIR = Path("traces")
-ARTICLES = {"a", "an", "the"}
-
-
-def normalize(value: Any) -> str:
-    text = "" if value is None else str(value)
-    text = text.lower()
-    text = text.translate(str.maketrans("", "", string.punctuation))
-    tokens = [token for token in text.split() if token not in ARTICLES]
-    return re.sub(r"\s+", " ", " ".join(tokens)).strip()
-
-
-def match_score(candidate: Any, gold: Any) -> float:
-    norm_candidate = normalize(candidate)
-    norm_gold = normalize(gold)
-    if not norm_candidate or not norm_gold:
-        return 0.0
-    if norm_candidate == norm_gold:
-        return 100.0
-    return float(fuzz.token_set_ratio(norm_candidate, norm_gold))
 
 
 def source_text_for(trace: dict, source: str | None) -> str:
@@ -69,13 +53,6 @@ def classify_match(score: float, threshold: float, margin: float, high_confidenc
     hit = score >= threshold
     low_confidence = threshold - margin <= score < high_confidence
     return hit, low_confidence
-
-
-def split_sentences(text: Any) -> list[str]:
-    if not text:
-        return []
-    clean = re.sub(r"\s+", " ", str(text)).strip()
-    return [part.strip() for part in re.split(r"(?<=[.!?])\s+", clean) if part.strip()]
 
 
 def parse_hop_result_lines(text: Any) -> list[str]:
