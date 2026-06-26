@@ -50,24 +50,26 @@ def main() -> None:
     labels = out / "labels.json"
     report = out / "validation_report.json"
     py = sys.executable
+    bench = Path(__file__).resolve().parent          # benchmark/
+    val = bench.parent / "validation"                # validation/
 
     print("=" * 80)
     print(f"HELD-OUT SET  dir={out}  seed={args.seed}  n={args.sample_size}  runs={args.runs}")
     print("Patterns are frozen: extract/score run the current code, no re-tuning.")
     print("=" * 80)
 
-    run([py, "load_data.py", "--seed", str(args.seed), "--sample-size", str(args.sample_size),
+    run([py, str(bench / "load_data.py"), "--seed", str(args.seed), "--sample-size", str(args.sample_size),
          "--out", str(questions)])
-    run([py, "run_agent.py", "--questions", str(questions), "--traces-dir", str(traces),
+    run([py, str(bench / "run_agent.py"), "--questions", str(questions), "--traces-dir", str(traces),
          "--runs", str(args.runs), "--max-steps", str(args.max_steps),
          "--workers", str(args.workers)])
-    run([py, "extract_hops.py", "--traces-dir", str(traces), "--reextract"])
-    run([py, "score.py", "--traces-dir", str(traces)])
+    run([py, str(bench / "extract_hops.py"), "--traces-dir", str(traces), "--reextract"])
+    run([py, str(bench / "score.py"), "--traces-dir", str(traces)])
 
     print("\n" + "=" * 80)
     print("Generated + scored. Now do the BLIND human step, then validate frozen:")
-    print(f"\n  {py} label.py    --traces-dir {traces} --labels {labels} --blind")
-    print(f"  {py} validate.py --traces-dir {traces} --labels {labels} --report {report}")
+    print(f"\n  {py} {val / 'label.py'}    --traces-dir {traces} --labels {labels} --blind")
+    print(f"  {py} {val / 'validate.py'} --traces-dir {traces} --labels {labels} --report {report}")
     print("\nCompare that validate.py output to the in-sample numbers. A large drop in")
     print("recall means the patterns overfit the tuned set rather than the construct.")
     print("=" * 80)
