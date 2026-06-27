@@ -1,0 +1,27 @@
+{
+  "_comment": "Example output of `python benchmark/analyze.py` on a real n=90 MuSiQue run (DeepSeek chat). Committed so the repo's output is visible without running the pipeline. The live stage1_summary.json is gitignored.",
+  "trace_count": 90,
+  "final_accuracy": 0.878,
+  "divergence_rate": 0.378,
+  "frac_any_intermediate_wrong": 0.456,
+  "frac_any_extraction_failed": 0.022,
+  "frac_any_retrieval_missed": 0.056,
+  "frac_parametric_leakage_signal": 0.267,
+  "frac_unverified_substitution": 0.233,
+  "frac_verified_prior": 0.133,
+  "frac_leakage_phrase_noise": 0.478,
+  "extraction_health": {
+    "hit": 158,
+    "wrong": 53,
+    "extraction_failed": 2
+  },
+  "final_answer_status_counts": {
+    "answered": 86,
+    "non_final_output": 4
+  },
+  "leakage_type_counts": {
+    "unverified_substitution": 50,
+    "verified_prior": 20,
+    "phrase_match_noise": 149
+  }
+}

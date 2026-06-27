@@ -1,8 +1,31 @@
 # RAG Grounding & Retrieval-Faithfulness
 
-Tools for measuring whether an LLM answer is actually **grounded in retrieved
-evidence**, or whether the model substituted its own parametric knowledge while
-still looking correct. Evaluation only — no corruption injection, RL, or training.
+**Your RAG agent gets the right answer — but did it use the retrieved evidence, or
+its own memory?** Standard evals check the final answer and call it a pass. This
+toolkit catches the answers that are *correct but unfaithful*: the model answered
+from parametric knowledge while the retrieval was ignored, wrong, or decorative.
+
+It measures whether an LLM answer is actually **grounded in retrieved evidence**,
+at two levels — sentence-level grounding of RAG responses, and trace-level
+substitution detection on a multi-hop QA agent. Evaluation only — no corruption
+injection, RL, or training.
+
+## Headline results
+
+A blind-labeled substitution detector that holds precision out of sample, and a
+grounding study showing no cheap local method clears product quality:
+
+```text
+substitution detector vs blind human labels   precision  recall    f1
+  tuned   (n=90)                                 0.95     0.91     0.93
+  held-out(n=90)                                 0.92     0.63     0.75
+
+grounding on full DelucionQA (n=1,826)         best F1    AUROC
+  best local method (HHEM, response-native)      0.198     0.68   ← not product-grade
+```
+
+See `stage1_summary.example.json` for a full real benchmark run (no setup needed
+to read it). Detail and method tables are below.
 
 - **`grounding/` — the product.** A sentence-level grounding instrument for RAG
   answers: given a question, retrieved documents, and a response, it flags
@@ -229,7 +252,8 @@ signal, not more lexical cues.
 - `questions.json` (gitignored, do not publish) / `questions.example.json`
   (schema-only, safe to commit).
 - `traces/trace_{id}_{run}.json`: serialized traces (gitignored).
-- `stage1_summary.json`: aggregate benchmark metrics (gitignored).
+- `stage1_summary.json`: aggregate benchmark metrics (gitignored);
+  `stage1_summary.example.json` is a committed real n=90 run, safe to read.
 - `ragbench/`: grounding records + validation report (gitignored).
 
 Constraints: answerable MuSiQue 2-hop/3-hop only (4-hop skipped); tested with
