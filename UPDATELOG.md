@@ -1,5 +1,40 @@
 # Update Log
 
+## 2026-06-28
+
+### Added
+- **Grounding Inspector web GUI (`grounding/server.py`, `grounding/web/`).** A
+  FastAPI front-end for the sentence-level grounding scorer, wrapping the existing
+  `guard.check()` — no second copy of the scoring logic. Serves two pages and one
+  `POST /api/check` endpoint, caching models per method:
+  - **Inspector** (`/`): single JS-driven page handling empty → loading →
+    grounded/ungrounded states. Paste a question, retrieved documents (one per
+    paragraph), and a response; pick method / granularity / threshold; see
+    per-sentence supported/unsupported verdicts, the overall banner, and the
+    regenerate feedback. In `response` granularity the per-sentence "best match"
+    line is hidden and the verdict reworded (a single match can't represent a
+    multi-claim answer).
+  - **Benchmarks** (`/benchmarks`): the real DelucionQA method-comparison and
+    MuSiQue substitution-detector numbers from the README.
+  - `grounding/README_app.md` documents how to run; `fastapi` + `uvicorn` added to
+    `requirements.txt`.
+
+### Fixed
+- **NLI/HHEM sentence scorers over-flagged grounded claims.**
+  `best_supports_nli` / `best_supports_hhem` concatenated the top-k closest document
+  sentences into one premise and made a single cross-encoder call; an irrelevant
+  neighbour could dilute a small NLI model into a wrong `neutral` verdict (a clearly
+  supported sentence scored **6.69/100**). They now score each candidate document
+  sentence separately and **max-pool**, matching the lexical/embedding scorers — same
+  example **→ 99.47/100**, and `best_document_sentence` is now meaningful. Shared
+  logic factored into `_topk_candidate_pairs` / `_maxpool_bests`. HHEM's native
+  whole-response mode (`granularity='response'`) is unchanged.
+
+### Known gap / next
+- The `nli` and `hhem (sentence)` rows in the README / benchmarks tables predate the
+  max-pool change and should be re-run to refresh (likely to improve). Other rows
+  (lexical, embedding, `hhem (response)`) are unaffected.
+
 ## 2026-06-26
 
 ### Changed
