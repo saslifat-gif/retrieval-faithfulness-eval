@@ -10,3 +10,6 @@ rapidfuzz
 sentence-transformers
 sentencepiece
 protobuf
+# Grounding Inspector web GUI (grounding/server.py)
+fastapi
+uvicorn

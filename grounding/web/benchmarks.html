@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Grounding Benchmarks</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; display:inline-block; vertical-align:middle; }
+  body { font-family: 'Inter', sans-serif; background-color:#f8f9fa; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .metric-card-hover:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(53,37,205,.08); }
+</style>
+<script id="tailwind-config">
+  tailwind.config = { darkMode:"class", theme:{ extend:{
+    colors:{ "primary":"#3525cd", "on-primary":"#ffffff", "primary-container":"#4f46e5",
+      "on-primary-container":"#dad7ff", "surface":"#f8f9fa", "surface-container":"#edeeef",
+      "surface-container-low":"#f3f4f5", "surface-container-lowest":"#ffffff",
+      "surface-container-high":"#e7e8e9", "surface-container-highest":"#e1e3e4",
+      "outline":"#777587", "outline-variant":"#c7c4d8", "on-surface":"#191c1d",
+      "on-surface-variant":"#464555", "on-background":"#191c1d", "secondary":"#006c49",
+      "secondary-container":"#6cf8bb", "on-secondary-container":"#00714d", "error":"#ba1a1a",
+      "tertiary":"#95002b", "background":"#f8f9fa" },
+    spacing:{ "xl":"32px","lg":"24px","md":"16px","xs":"4px","sm":"8px" },
+    fontSize:{ "display-lg":["32px",{"lineHeight":"40px","fontWeight":"600"}],
+      "headline-md":["20px",{"lineHeight":"28px","fontWeight":"600"}],
+      "label-caps":["12px",{"lineHeight":"16px","letterSpacing":"0.05em","fontWeight":"600"}],
+      "body-md":["16px",{"lineHeight":"24px","fontWeight":"400"}],
+      "body-sm":["14px",{"lineHeight":"20px","fontWeight":"400"}],
+      "code-md":["14px",{"lineHeight":"20px","fontWeight":"500"}] } } } }
+</script>
+</head>
+<body class="bg-background text-on-surface">
+<nav class="bg-surface-container-lowest flex justify-between items-center w-full px-lg h-16 sticky top-0 z-50 border-b border-outline-variant">
+<span class="font-headline-md text-headline-md font-bold text-primary">Grounding Benchmarks</span>
+<div class="hidden md:flex gap-lg items-center">
+<a class="text-on-surface-variant text-body-md hover:text-primary transition-colors" href="/">Inspector</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1 text-body-md" href="/benchmarks">Benchmarks</a>
+</div>
+</nav>
+
+<main class="max-w-[1200px] mx-auto p-lg">
+<header class="mb-lg">
+<span class="font-label-caps text-label-caps text-primary uppercase tracking-[0.2em] mb-xs block">RAGBench · DelucionQA</span>
+<h1 class="text-display-lg font-display-lg text-on-background tracking-tight">Grounding method comparison</h1>
+<p class="text-body-md text-on-surface-variant mt-xs max-w-2xl">Full DelucionQA: <span class="mono font-medium">n=1,826</span> response triples, <span class="mono font-medium">10,027</span> response sentences, gold ungrounded rate <span class="mono font-medium">0.066</span>. AUROC is the product-relevant metric — a fixed-threshold F1 is punished by the 6.6% positive rate even when ranking is fine.</p>
+</header>
+
+<!-- Headline metrics (the honest result) -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-lg mb-xl">
+<div class="bg-white border border-outline-variant p-lg rounded-xl metric-card-hover transition-all duration-300">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest block mb-sm">Best AUROC (HHEM, response)</span>
+<div class="flex items-baseline gap-xs"><span class="text-4xl font-bold mono text-primary">0.68</span><span class="text-on-surface-variant text-xs font-bold">ceiling</span></div>
+<div class="w-full bg-surface-container h-1 mt-md rounded-full overflow-hidden"><div class="bg-primary h-full" style="width:68%"></div></div>
+</div>
+<div class="bg-white border border-outline-variant p-lg rounded-xl metric-card-hover transition-all duration-300">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest block mb-sm">Best response F1</span>
+<div class="flex items-baseline gap-xs"><span class="text-4xl font-bold mono text-primary">0.198</span><span class="text-tertiary text-xs font-bold">not product-grade</span></div>
+<div class="w-full bg-surface-container h-1 mt-md rounded-full overflow-hidden"><div class="bg-primary h-full" style="width:20%"></div></div>
+</div>
+<div class="bg-white border border-outline-variant p-lg rounded-xl metric-card-hover transition-all duration-300">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest block mb-sm">Gold ungrounded rate</span>
+<div class="flex items-baseline gap-xs"><span class="text-4xl font-bold mono text-primary">6.6%</span><span class="text-on-surface-variant text-xs font-bold">positive class</span></div>
+<div class="w-full bg-surface-container h-1 mt-md rounded-full overflow-hidden"><div class="bg-tertiary h-full" style="width:6.6%"></div></div>
+</div>
+</section>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-lg items-start">
+<!-- Method Comparison Table (real numbers) -->
+<div class="lg:col-span-7 bg-white border border-outline-variant rounded-xl overflow-hidden">
+<div class="px-lg py-md border-b border-outline-variant bg-surface-container-low">
+<h3 class="font-headline-md text-headline-md text-on-background">Method comparison</h3>
+</div>
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container-lowest"><tr>
+<th class="px-lg py-sm font-label-caps text-label-caps text-on-surface-variant uppercase border-b border-outline-variant">Method (granularity)</th>
+<th class="px-lg py-sm font-label-caps text-label-caps text-on-surface-variant uppercase border-b border-outline-variant text-center">Best F1</th>
+<th class="px-lg py-sm font-label-caps text-label-caps text-on-surface-variant uppercase border-b border-outline-variant text-center">AUROC</th>
+<th class="px-lg py-sm font-label-caps text-label-caps text-on-surface-variant uppercase border-b border-outline-variant text-right">Note</th>
+</tr></thead>
+<tbody class="divide-y divide-outline-variant/30">
+<tr class="hover:bg-surface-container-low/50">
+<td class="px-lg py-md font-medium">Lexical</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">0.144</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">0.58</td>
+<td class="px-lg py-md text-right"><span class="px-sm py-xs rounded bg-surface-container text-on-surface-variant font-label-caps text-[10px]">token overlap</span></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50">
+<td class="px-lg py-md font-medium">Embedding (cosine)</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">0.151</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">0.58</td>
+<td class="px-lg py-md text-right"><span class="px-sm py-xs rounded bg-surface-container text-on-surface-variant font-label-caps text-[10px]">similarity</span></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50">
+<td class="px-lg py-md font-medium">NLI (vanilla MNLI)</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">0.133</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">~0.50</td>
+<td class="px-lg py-md text-right"><span class="px-sm py-xs rounded bg-[#fde8e8] text-[#93000a] font-label-caps text-[10px]">over-flags paraphrase</span></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50">
+<td class="px-lg py-md font-medium">HHEM (sentence)</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">0.158</td>
+<td class="px-lg py-md text-center mono text-on-surface-variant">0.65</td>
+<td class="px-lg py-md text-right"><span class="px-sm py-xs rounded bg-surface-container text-on-surface-variant font-label-caps text-[10px]">faithfulness</span></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 bg-primary/5">
+<td class="px-lg py-md font-medium border-l-2 border-primary">HHEM (response, native)</td>
+<td class="px-lg py-md text-center mono text-primary font-bold">0.198</td>
+<td class="px-lg py-md text-center mono text-primary font-bold">0.68</td>
+<td class="px-lg py-md text-right"><span class="px-sm py-xs rounded bg-primary-container text-white font-label-caps text-[10px]">best local</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<!-- AUROC bar chart (real values) -->
+<div class="lg:col-span-5 bg-white border border-outline-variant rounded-xl p-lg h-full flex flex-col">
+<div class="flex justify-between items-center mb-lg">
+<h3 class="font-headline-md text-headline-md text-on-background">AUROC by method</h3>
+<span class="font-label-caps text-[10px] text-on-surface-variant uppercase">0.50 = chance</span>
+</div>
+<div class="flex-1 relative min-h-[220px] flex items-end justify-between gap-sm px-xs pb-md" id="chart">
+<!-- bars injected; data-auroc as fraction of 1.0 -->
+<div class="relative w-full flex flex-col items-center"><div class="bg-surface-container-highest w-full h-[180px] rounded-t-sm relative"><div class="bg-surface-container-high w-full rounded-t-sm absolute bottom-0" data-h="58"></div></div><span class="mono text-[10px] mt-sm text-on-surface-variant">Lex</span></div>
+<div class="relative w-full flex flex-col items-center"><div class="bg-surface-container-highest w-full h-[180px] rounded-t-sm relative"><div class="bg-surface-container-high w-full rounded-t-sm absolute bottom-0" data-h="58"></div></div><span class="mono text-[10px] mt-sm text-on-surface-variant">Emb</span></div>
+<div class="relative w-full flex flex-col items-center"><div class="bg-surface-container-highest w-full h-[180px] rounded-t-sm relative"><div class="bg-[#e6b3bd] w-full rounded-t-sm absolute bottom-0" data-h="50"></div></div><span class="mono text-[10px] mt-sm text-on-surface-variant">NLI</span></div>
+<div class="relative w-full flex flex-col items-center"><div class="bg-surface-container-highest w-full h-[180px] rounded-t-sm relative"><div class="bg-primary-container w-full rounded-t-sm absolute bottom-0" data-h="65"></div></div><span class="mono text-[10px] mt-sm text-on-surface-variant">HHEM-s</span></div>
+<div class="relative w-full flex flex-col items-center"><div class="bg-surface-container-highest w-full h-[180px] rounded-t-sm relative"><div class="bg-primary w-full rounded-t-sm absolute bottom-0" data-h="68"></div></div><span class="mono text-[10px] mt-sm text-on-surface-variant">HHEM-r</span></div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant italic mt-sm">Higher is better; even the best local method (0.68) sits well below product grade.</p>
+</div>
+</div>
+
+<!-- Finding + substitution-detector validation -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-lg mt-xl">
+<div class="bg-primary p-lg rounded-xl text-white flex flex-col justify-between overflow-hidden relative">
+<div class="z-10">
+<span class="font-label-caps text-label-caps text-on-primary-container uppercase tracking-widest mb-sm block">Finding</span>
+<h4 class="text-2xl font-bold mb-md">No affordable local method reaches product quality</h4>
+<p class="text-body-md opacity-90 max-w-sm">Similarity (lexical, embedding) cannot separate "supported" from "on-topic-but-fabricated"; vanilla NLI over-flags grounded paraphrase; HHEM is best calibrated but caps at AUROC 0.68. Product-grade grounding at this difficulty needs an LLM judge, or a narrower human-in-the-loop triage scope.</p>
+</div>
+<div class="absolute -right-12 -bottom-12 w-48 h-48 bg-white/10 rounded-full blur-3xl"></div>
+</div>
+
+<!-- Substitution detector validation (separate track, real numbers) -->
+<div class="bg-white border border-outline-variant rounded-xl p-lg flex flex-col">
+<div class="flex items-center justify-between mb-sm">
+<h4 class="font-headline-md text-headline-md text-on-background">Substitution detector</h4>
+<span class="font-label-caps text-[10px] text-on-surface-variant uppercase">vs blind human labels</span>
+</div>
+<p class="text-body-sm text-on-surface-variant mb-md">Separate MuSiQue track — not the grounding study above. Precision holds out of sample; recall drops on silent bridges.</p>
+<table class="w-full text-left text-body-sm">
+<thead><tr class="text-on-surface-variant">
+<th class="py-sm font-label-caps text-label-caps uppercase"> </th>
+<th class="py-sm font-label-caps text-label-caps uppercase text-center">Prec</th>
+<th class="py-sm font-label-caps text-label-caps uppercase text-center">Rec</th>
+<th class="py-sm font-label-caps text-label-caps uppercase text-center">F1</th>
+</tr></thead>
+<tbody class="divide-y divide-outline-variant/30">
+<tr><td class="py-sm font-medium">Tuned <span class="text-on-surface-variant">(n=90)</span></td>
+<td class="py-sm text-center mono text-secondary font-bold">0.95</td>
+<td class="py-sm text-center mono">0.91</td>
+<td class="py-sm text-center mono font-bold">0.93</td></tr>
+<tr><td class="py-sm font-medium">Held-out <span class="text-on-surface-variant">(n=90)</span></td>
+<td class="py-sm text-center mono text-secondary font-bold">0.92</td>
+<td class="py-sm text-center mono">0.63</td>
+<td class="py-sm text-center mono font-bold">0.75</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+
+<script>
+  // Scale the AUROC bars (data-h is the AUROC * 100) against the 180px track.
+  document.querySelectorAll('#chart [data-h]').forEach((bar, i) => {
+    const h = Number(bar.dataset.h);
+    bar.style.height = '0%';
+    setTimeout(() => { bar.style.height = (h / 100 * 100) + '%'; }, 120 * i);
+  });
+</script>
+</body></html>

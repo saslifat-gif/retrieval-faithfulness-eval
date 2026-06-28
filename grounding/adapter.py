@@ -172,42 +172,64 @@ def _entailment_index(nli_model: Any) -> int:
     return 1  # cross-encoder/nli-* convention: 0=contradiction, 1=entailment, 2=neutral
 
 
-def best_supports_nli(response_texts: list[str], document_sentences: list[dict], embedder: Any,
-                      nli_model: Any, top_k: int) -> list[dict]:
-    """Entailment support, not similarity. Use embeddings to select the top-k closest
-    document sentences as the premise, then score whether that premise *entails* the
-    response sentence with an NLI cross-encoder. Entailment probability (0-100) is the
-    support — this is the thing similarity scorers cannot measure: whether the context
-    actually licenses the claim, vs merely being on-topic."""
+def _topk_candidate_pairs(response_texts: list[str], document_sentences: list[dict],
+                          embedder: Any, top_k: int) -> tuple[list[tuple[str, str]], list[int], list[dict]]:
+    """For each response sentence, build (premise=document_sentence, hypothesis=response)
+    pairs for its top-k embedding-closest document sentences, kept SEPARATE — one pair
+    per candidate — so a cross-encoder scores each candidate on its own. Returns the flat
+    `pairs`, plus `owner[i]` (the response index for pair i) and `cand[i]` (the document
+    record for pair i) so callers can max-pool the scores back per response sentence."""
     import numpy as np
 
     doc_texts = [item["text"] for item in document_sentences]
     resp_emb = embedder.encode(response_texts, normalize_embeddings=True, convert_to_numpy=True)
     doc_emb = embedder.encode(doc_texts, normalize_embeddings=True, convert_to_numpy=True)
     sims = resp_emb @ doc_emb.T
-    entail_idx = _entailment_index(nli_model)
     k = min(top_k, len(doc_texts))
 
-    pairs = []
-    top_keys = []
+    pairs: list[tuple[str, str]] = []
+    owner: list[int] = []
+    cand: list[dict] = []
     for index in range(len(response_texts)):
         order = np.argsort(-sims[index])[:k]
-        premise = " ".join(doc_texts[int(j)] for j in order)
-        pairs.append((premise, response_texts[index]))
-        top_keys.append(document_sentences[int(order[0])])
+        for j in order:
+            pairs.append((doc_texts[int(j)], response_texts[index]))
+            owner.append(index)
+            cand.append(document_sentences[int(j)])
+    return pairs, owner, cand
 
-    probs = nli_model.predict(pairs, apply_softmax=True, show_progress_bar=False)
-    bests = []
-    for index in range(len(response_texts)):
-        entail = float(probs[index][entail_idx])
-        bests.append(
-            {
-                "score": round(entail * 100.0, 2),
-                "document_sentence_key": top_keys[index]["key"],
-                "document_sentence": top_keys[index]["text"],
+
+def _maxpool_bests(n: int, owner: list[int], cand: list[dict], raw_scores: list[float]) -> list[dict]:
+    """Max-pool per-candidate scores (already on the 0-100 scale) back to one best
+    support per response sentence, recording which document sentence carried it."""
+    bests = [{"score": -1.0, "document_sentence_key": None, "document_sentence": None} for _ in range(n)]
+    for p_idx, owner_idx in enumerate(owner):
+        val = float(raw_scores[p_idx])
+        if val > bests[owner_idx]["score"]:
+            bests[owner_idx] = {
+                "score": val,
+                "document_sentence_key": cand[p_idx]["key"],
+                "document_sentence": cand[p_idx]["text"],
             }
-        )
+    for b in bests:
+        b["score"] = round(max(b["score"], 0.0), 2)
     return bests
+
+
+def best_supports_nli(response_texts: list[str], document_sentences: list[dict], embedder: Any,
+                      nli_model: Any, top_k: int) -> list[dict]:
+    """Entailment support, not similarity. For each response sentence, score whether each
+    of its top-k embedding-closest document sentences *entails* it (NLI cross-encoder) and
+    keep the MAX entailment probability (0-100). Max-pooling over individual candidates —
+    rather than concatenating them into one premise — stops an irrelevant neighbour from
+    diluting a small NLI model into a wrong 'neutral' verdict on a genuinely grounded
+    claim. This is the thing similarity scorers cannot measure: whether the context
+    actually licenses the claim, vs merely being on-topic."""
+    entail_idx = _entailment_index(nli_model)
+    pairs, owner, cand = _topk_candidate_pairs(response_texts, document_sentences, embedder, top_k)
+    probs = nli_model.predict(pairs, apply_softmax=True, show_progress_bar=False)
+    raw = [float(probs[i][entail_idx]) * 100.0 for i in range(len(pairs))]
+    return _maxpool_bests(len(response_texts), owner, cand, raw)
 
 
 _HHEM: Any = None
@@ -225,38 +247,16 @@ def get_hhem_model(model_name: str) -> Any:
 
 def best_supports_hhem(response_texts: list[str], document_sentences: list[dict], embedder: Any,
                        hhem_model: Any, top_k: int) -> list[dict]:
-    """Purpose-built faithfulness scorer (Vectara HHEM). Same premise selection as NLI,
-    but HHEM.predict returns a factual-consistency score (1 = grounded, 0 = hallucinated)
-    trained for exactly 'is this generation supported by the source' — the task vanilla
-    MNLI under-entails."""
-    import numpy as np
-
-    doc_texts = [item["text"] for item in document_sentences]
-    resp_emb = embedder.encode(response_texts, normalize_embeddings=True, convert_to_numpy=True)
-    doc_emb = embedder.encode(doc_texts, normalize_embeddings=True, convert_to_numpy=True)
-    sims = resp_emb @ doc_emb.T
-    k = min(top_k, len(doc_texts))
-
-    pairs = []
-    top_keys = []
-    for index in range(len(response_texts)):
-        order = np.argsort(-sims[index])[:k]
-        premise = " ".join(doc_texts[int(j)] for j in order)
-        pairs.append((premise, response_texts[index]))
-        top_keys.append(document_sentences[int(order[0])])
-
+    """Purpose-built faithfulness scorer (Vectara HHEM). Same max-pool strategy as NLI:
+    score the response sentence against each top-k candidate document sentence separately
+    (HHEM.predict returns a 0-1 factual-consistency score, 1 = grounded) and keep the best.
+    NOTE: HHEM's native whole-response mode (granularity='response') is handled separately
+    in score_row and is unaffected by this per-sentence path."""
+    pairs, owner, cand = _topk_candidate_pairs(response_texts, document_sentences, embedder, top_k)
     scores = hhem_model.predict(pairs)
     scores = scores.tolist() if hasattr(scores, "tolist") else list(scores)
-    bests = []
-    for index in range(len(response_texts)):
-        bests.append(
-            {
-                "score": round(float(scores[index]) * 100.0, 2),
-                "document_sentence_key": top_keys[index]["key"],
-                "document_sentence": top_keys[index]["text"],
-            }
-        )
-    return bests
+    raw = [float(s) * 100.0 for s in scores]
+    return _maxpool_bests(len(response_texts), owner, cand, raw)
 
 
 def score_row(row: dict, row_index: int, threshold: float, dataset: str, config: str, split: str,
