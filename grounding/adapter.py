@@ -364,7 +364,8 @@ def main() -> None:
                         help="Grounding scorer: lexical fuzzy match, embedding cosine, NLI entailment, "
                              "or HHEM faithfulness.")
     parser.add_argument("--top-k", type=int, default=5,
-                        help="NLI/HHEM sentence mode: embedding-closest doc sentences to concatenate as premise.")
+                        help="NLI/HHEM sentence mode: embedding-closest doc sentences scored "
+                             "individually, max-pooled per response sentence.")
     parser.add_argument("--granularity", choices=["sentence", "response"], default="sentence",
                         help="'response' scores the whole response vs the whole document set (HHEM native mode); "
                              "only response-level metrics are meaningful then.")

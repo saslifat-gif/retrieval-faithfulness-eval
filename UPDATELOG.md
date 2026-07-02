@@ -1,5 +1,34 @@
 # Update Log
 
+## 2026-07-02
+
+### Added
+- **`tests/` — offline regression suite (77 tests, stdlib `unittest`, no pytest /
+  models / API).** Run `python -m unittest` from the repo root. Pins the behavior
+  the project's headline numbers depend on:
+  - the frozen leakage patterns and 3-way routing in `classify_leakage_quote`
+    (assertion → `unverified_substitution`, hedge/self-instruction → noise,
+    prior cues → `verified_prior`), plus `score_trace` end-to-end on synthetic
+    faithful and substitution traces;
+  - `common/text.py` normalization/matching, the RAGBench adapter's key
+    normalization + lexical `score_row` contract (including the trailing-period
+    gold-key case), `guard.py`'s check/regenerate/abstain loop, and
+    `validate.py`'s confusion/metrics math.
+
+### Fixed
+- **`classify_leakage_quote` prior-cue patterns could never match.** The quote is
+  lowercased before matching but `prior_patterns` contained uppercase literals
+  (`\bI know\b`, `\bI can infer\b`) matched case-sensitively — so those cues were
+  dead and their quotes fell through to `phrase_match_noise` instead of
+  `verified_prior`. Patterns are now lowercase. The headline
+  `unverified_substitution` bucket is checked *before* prior patterns, so the
+  validated precision/recall numbers are unaffected; only the
+  `verified_prior` / `phrase_match_noise` split (and `frac_verified_prior` /
+  `frac_leakage_phrase_noise` in `analyze.py`) shifts on re-score.
+- Stale `--top-k` help text in `grounding/adapter.py` still described the
+  pre-max-pool "concatenate as premise" behavior.
+- Untracked `.DS_Store` from git and added it to `.gitignore`.
+
 ## 2026-06-28
 
 ### Added

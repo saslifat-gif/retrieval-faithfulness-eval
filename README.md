@@ -52,8 +52,9 @@ to read it). Detail and method tables are below.
 ├── validation/       metric-validation track
 │   ├── label.py          hand-label traces for substitution ground truth
 │   └── validate.py       precision/recall/F1 of a detector vs labels, + baselines
-└── common/
-    └── text.py           shared normalization + fuzzy matching
+├── common/
+│   └── text.py           shared normalization + fuzzy matching
+└── tests/            regression tests pinning the frozen detector patterns
 ```
 
 Run everything **from the repository root** (`traces/`, `labels/`, `ragbench/`,
@@ -76,6 +77,15 @@ DEEPSEEK_MODEL=deepseek-chat
 # Optional: MODEL_ID, MODEL_API_KEY_ENV, MODEL_API_BASE, EXTRACTOR_MODEL_ID,
 # RUNS_PER_QUESTION, MAX_STEPS, TOP_K, MATCH_THRESHOLD,
 # EXTRACTED_CONCLUSION_SOURCE_THRESHOLD
+```
+
+Run the regression tests (offline — no models, API keys, or pytest needed).
+The leakage patterns are validated against blind human labels and treated as
+frozen; the suite pins their behavior so an accidental edit fails a test
+instead of silently shifting the metric:
+
+```bash
+python -m unittest
 ```
 
 ---
