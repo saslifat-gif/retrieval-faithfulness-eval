@@ -287,12 +287,14 @@ def classify_leakage_quote(quote: str) -> str:
     if any(re.search(pattern, text) for pattern in unverified_patterns):
         return "unverified_substitution"
 
+    # `text` is lowercased above, so patterns must be lowercase too — an
+    # uppercase literal here can never match.
     prior_patterns = [
         r"\bknown\b",
         r"\bhistorically\b",
         r"\bfrom knowledge\b",
-        r"\bI know\b",
-        r"\bI can infer\b",
+        r"\bi know\b",
+        r"\bi can infer\b",
     ]
     if any(re.search(pattern, text) for pattern in prior_patterns):
         return "verified_prior"
